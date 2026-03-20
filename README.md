@@ -1,4 +1,4 @@
-# ICUI Experiments — Reproducible Codebase
+# Actionable Counterfactuals Codebase
 
 **Paper:** *Actionable Counterfactuals: Augmenting Human What-If Reasoning with LLM-Generated Recommendations*
 
@@ -9,8 +9,8 @@ This repository contains the analysis scripts for all experiments reported in th
 ## Repository Structure
 
 ```
-icui-experiments/
-├── README.md                          ← You are here
+umap/
+├── README.md
 ├── data/
 │   ├── raw/                           ← Raw anonymized study data (not tracked in git)
 │   └── processed/                     ← Cleaned CSVs produced by preprocessing
@@ -124,6 +124,6 @@ python experiment_2_2/human_eval_analysis.py --input experiment_2_2/outputs/AI-H
 
 Raw study data is not included in this repository for privacy reasons. The `data/raw/` directory should contain:
 - `A_Plan_unparaphrased_targetGoal.csv` — Condition A participant data with userId, sessionNumber, transcriptionText, answers, target_goal
-- (Optional) `B_Plan_unparaphrased_targetGoal.csv` — Condition B data
+- `B_Plan_unparaphrased_targetGoal.csv` — Condition B data
 
 Processed intermediates are written to `data/processed/` by the preprocessing scripts.
