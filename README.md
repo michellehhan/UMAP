@@ -127,12 +127,3 @@ Raw study data is not included in this repository for privacy reasons. The `data
 - (Optional) `B_Plan_unparaphrased_targetGoal.csv` — Condition B data
 
 Processed intermediates are written to `data/processed/` by the preprocessing scripts.
-
----
-
-## Citation
-
-If you use this code, please cite:
-```
-[Citation to be added upon publication]
-```
