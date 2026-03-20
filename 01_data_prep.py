@@ -7,6 +7,11 @@ Cleans raw study data and uses GPT-4.1 to:
 3. Paraphrase target goals into concise first-person sentences
 
 Source notebook: IUI_CleanedFinalDataPrep.ipynb
+
+IMPORTANT: All prompts below are copied verbatim from the original notebook.
+The notebook reassigns SYSTEM_PROMPT and USER_PROMPT_TEMPLATE at different
+stages — here we use separate named variables for clarity, but the text is
+identical to the original.
 """
 
 import argparse
@@ -34,69 +39,153 @@ TEMPERATURE_GOAL = 0.3
 MAX_RETRIES = 3
 SLEEP_BASE = 2
 
+# -----------------------------------------------------------
+# Used for: Transcript segmentation (Paraphrasing TargetGoals
+# + Temperature Testing section / Appending to OUTPUT_CSV)
+# -----------------------------------------------------------
 
-# ============================================================
-# Prompts
-# ============================================================
-
-STAGE_SYSTEM_PROMPT = (
-    "You are an expert in paraphrasing and segmenting reflective journal entries "
-    "into the five stages of the Gross Process Model of Emotion Regulation."
+TRANSCRIPT_SYSTEM_PROMPT = (
+    "You are an expert in paraphrasing and segmenting reflective journal entries into the five stages of the Gross Process Model of Emotion Regulation."
 )
 
-STAGE_USER_PROMPT = """
+TRANSCRIPT_USER_PROMPT = """
 Your task is to label the journal entries into five stages.
-From the following journal entry, extract what the user explicitly described doing, feeling,
-or deciding for each of the five phases below.
-
-Do not infer or add new information beyond what is clearly stated.
-Try to keep as much detail and in original tone.
+From the following journal entry, extract what the user explicitly described doing, feeling, or deciding for each of the five phases below.
+Do not infer or add new information beyond what is clearly stated. Try to keep as much as detail and in original tone.
+If there are multiple actions, events, or reflections related to one phase, include them all — either as separate short sentences or joined naturally.
+Each phase can have multiple sentences if necessary for completeness or clarity.
 
 Guidelines:
 - Use only details explicitly present in the journal.
-- Each phase should be expressed in natural first-person language.
+- Each phase should be expressed in natural first-person language that reflects both the context and emotional nuance of the journal entry
 - Preserve order and context; do not summarize or generalize.
-- Each phase can include multiple short sentences if needed (max 3 per phase).
+- Each phase can include multiple short sentences if needed, but try to keep at most 3 sentences per phase.
 - If a phase is not represented, set its value to an empty string "".
 - Always return valid minified JSON with keys "0" through "4".
 - No code fences, no explanations, no extra text.
 
-Phases:
-0. Situation Selection — Choosing to approach or avoid situations or people.
-1. Situation Modification — Changing the environment to alter its emotional impact.
-2. Attentional Deployment — Directing or shifting attention to influence emotions.
-3. Cognitive Change — Reframing or reinterpreting the meaning of a situation.
-4. Response Modulation — Managing emotional expression, behavior, or physiology.
+Counterfactuals refer to a statement on alternative way a situation could have unfolded or an action one could have taken differently.
 
-Journal entry: {journal}
+The following texts are user a journal entry separated into the phases of the gross model of emotion regulation and user counterfactuals about what they could've done differently.
+Separate the counterfactuals text into paraphrased individual counterfactuals and then assign them to the proper phase of the journal entry based on the context of the journal entry and the phases as defined below:
+0. Situation Selection — Choosing to approach or avoid situations or people to regulate emotions.
+   Example: taking a different route to avoid an unpleasant neighbor, or seeking out a supportive friend.
+1. Situation Modification — Changing the environment to alter its emotional impact.
+   Example: asking someone to lower loud music, or moving a stressful in-person meeting to a phone call.
+2. Attentional Deployment — Directing or shifting attention to influence emotions.
+   Example: distracting oneself, focusing on a non-emotional detail, or using an engaging task to break rumination.
+3. Cognitive Change — Reframing or reinterpreting the meaning of a situation.
+   Example: viewing stage fright as excitement, or comparing oneself to others less fortunate to feel better.
+4. Response Modulation — Managing emotional expression, behavior, or physiology.
+   Example: deep breathing to reduce arousal, suppressing inappropriate laughter, or using alcohol to numb emotions.
+
+There can be multiple counterfactuals per phase, and none for some phases.
+Return the result as a JSON with keys: 0-4 for each corresponding phase. In the case a phase isn't present, make "" the default filler for that phase.
+No code fences, no explanation, no extra text—just minified JSON.
+
+Journal entry (from extracted_phases_json): {journal}
 """
 
+# -----------------------------------------------------------
+# Used for: Human counterfactual assignment to stages
+# (Assigning Stages to CondA Human-Generated Counterfactuals)
+# -----------------------------------------------------------
+
 CF_ASSIGNMENT_SYSTEM_PROMPT = (
-    "You are an expert in labeling and paraphrasing counterfactual sentences into the "
-    "five stages of the Gross Process Model of Emotion Regulation."
+    "You are an expert in labeling and paraphrasing the given counterfactual sentence into the relevant five stages of how the event unfolded based on the Gross Process Model of Emotion Regulation."
 )
 
 CF_ASSIGNMENT_USER_PROMPT = """
-Your task is to label counterfactual statements into five stages.
+Your task is to label the journal entries into five stages.
+From the following journal entry, extract what the user explicitly described doing, feeling, or deciding for each of the five phases below.
+Do not infer or add new information beyond what is clearly stated. Try to keep as much as detail and in original tone.
+If there are multiple actions, events, or reflections related to one phase, include them all — either as separate short sentences or joined naturally.
+Each phase can have multiple sentences if necessary for completeness or clarity.
 
-Phases:
-0. Situation Selection — Choosing to approach or avoid situations or people.
+Guidelines:
+- Use only details explicitly present in the journal.
+- Each phase should be expressed in natural first-person language that reflects both the context and emotional nuance of the journal entry
+- Preserve order and context; do not summarize or generalize.
+- Each phase can include multiple short sentences if needed, but try to keep at most 3 sentences per phase.
+- If a phase is not represented, set its value to an empty string "".
+- Always return valid minified JSON with keys "0" through "4".
+- No code fences, no explanations, no extra text.
+
+Counterfactuals refer to a statement on alternative way a situation could have unfolded or an action one could have taken differently.
+
+The following texts are user a journal entry separated into the phases of the gross model of emotion regulation and user counterfactuals about what they could've done differently.
+Separate the counterfactuals text into paraphrased individual counterfactuals and then assign them to the proper phase of the journal entry based on the context of the journal entry and the phases as defined below:
+0. Situation Selection — Choosing to approach or avoid situations or people to regulate emotions.
+   Example: taking a different route to avoid an unpleasant neighbor, or seeking out a supportive friend.
 1. Situation Modification — Changing the environment to alter its emotional impact.
+   Example: asking someone to lower loud music, or moving a stressful in-person meeting to a phone call.
 2. Attentional Deployment — Directing or shifting attention to influence emotions.
+   Example: distracting oneself, focusing on a non-emotional detail, or using an engaging task to break rumination.
 3. Cognitive Change — Reframing or reinterpreting the meaning of a situation.
+   Example: viewing stage fright as excitement, or comparing oneself to others less fortunate to feel better.
 4. Response Modulation — Managing emotional expression, behavior, or physiology.
+   Example: deep breathing to reduce arousal, suppressing inappropriate laughter, or using alcohol to numb emotions.
 
-There may be multiple counterfactuals per phase or none for some phases.
-Return only a JSON object with keys 0-4; use "" for any phase not found.
+There can be multiple counterfactuals per phase, and none for some phases.
+Return the result as a JSON with keys: 0-4 for each corresponding phase. In the case a phase isn't present, make "" the default filler for that phase.
 No code fences, no explanation, no extra text—just minified JSON.
 
-Journal entry (for context): {journal}
-Counterfactual text: {answers}
+Journal entry (from extracted_phases_json): {journal}
+Counterfactual text (from answers): {answers}
 """
 
+# -----------------------------------------------------------
+# Used for: Splitting Answers into Human Alt Stages
+# (Temperature = 0.3 through testing section)
+# -----------------------------------------------------------
+
+HUMAN_ALT_SYSTEM_PROMPT = (
+    "You are an expert in analyzing and paraphrasing counterfactual statements about emotional experiences. "
+    "Your goal is to accurately label each statement into one of the five stages of the Gross Process Model of Emotion Regulation. "
+    "Do not infer, elaborate, or redistribute meaning beyond what the user explicitly expressed."
+)
+
+HUMAN_ALT_USER_PROMPT = """
+Your task is to paraphrase and label the following counterfactual statements into the five stages of the Gross Process Model of Emotion Regulation.
+
+From the counterfactual text below, extract what the user explicitly described doing, feeling, or deciding for each of the five phases.
+Keep the content faithful to the user's original intent and tone; do not infer unstated emotions or causes.
+If multiple actions, events, or reflections relate to one phase, include them all—either as short separate sentences or joined naturally.
+Each phase can include multiple short sentences if needed, but limit to three per phase.
+
+Guidelines:
+- Use only information explicitly present in the counterfactual text.
+- Express each phase in first-person language consistent with the user's tone.
+- Preserve order and emotional context; avoid summarizing or generalizing.
+- If a phase is not represented, set its value to an empty string "".
+- Always return valid minified JSON with keys "0" through "4".
+- No code fences, explanations, or extra text.
+
+Phases:
+0. Situation Selection — Choosing to approach or avoid situations or people to regulate emotions.
+   Example: taking a different route to avoid an unpleasant neighbor, or seeking out a supportive friend.
+1. Situation Modification — Changing the environment to alter its emotional impact.
+   Example: asking someone to lower loud music, or moving a stressful in-person meeting to a phone call.
+2. Attentional Deployment — Directing or shifting attention to influence emotions.
+   Example: distracting oneself, focusing on a neutral detail, or using an engaging task to break rumination.
+3. Cognitive Change — Reinterpreting or reassessing the meaning of a situation to alter its emotional impact.
+   Example: viewing stage fright as excitement, or realizing that a setback is a chance to learn.
+4. Response Modulation — Managing emotional expression, behavior, or physiology.
+   Example: deep breathing to reduce arousal, suppressing laughter, or using relaxation to calm down.
+
+There may be multiple counterfactuals per phase or none for some phases.
+Return only a JSON object with keys 0–4; use "" for any phase not found.
+
+Counterfactual text (from answers): {answers}
+"""
+
+# -----------------------------------------------------------
+# Used for: Goal paraphrasing (Target Goal Paraphrased section)
+# -----------------------------------------------------------
+
 GOAL_SYSTEM_PROMPT = (
-    "You are an expert at paraphrasing user-written goals into a single, clear, "
-    "first-person sentence that captures the main focus or change the user wants to make."
+    "You are an expert at paraphrasing user-written goals into a single, clear, first-person sentence "
+    "that captures the main focus or change the user wants to make."
 )
 
 GOAL_USER_PROMPT = """
@@ -104,11 +193,11 @@ Paraphrase the following reflection into one concise first-person sentence that 
 the user's overall goal or focus for improvement.
 
 Guidelines:
-- Capture the main behavioral or emotional change the user wants to make.
-- Preserve the user's tone.
+- Capture the *main behavioral or emotional change* the user wants to make.
+- Preserve the user's tone (e.g., sincere, reflective, goal-oriented).
 - Avoid repeating examples or minor details.
 - Keep it under 25 words.
-- Output only one natural-sounding first-person sentence.
+- Output only one natural-sounding first-person sentence. No explanations, no bullet points.
 
 Original goal text:
 {goal}
@@ -152,8 +241,8 @@ def segment_transcripts(client: OpenAI, df: pd.DataFrame) -> pd.DataFrame:
             results.append("")
             continue
 
-        prompt = STAGE_USER_PROMPT.format(journal=journal)
-        result = gpt_call(client, STAGE_SYSTEM_PROMPT, prompt, TEMPERATURE_STAGE)
+        prompt = TRANSCRIPT_USER_PROMPT.format(journal=journal)
+        result = gpt_call(client, TRANSCRIPT_SYSTEM_PROMPT, prompt, TEMPERATURE_STAGE)
 
         try:
             parsed = json.loads(result)
@@ -189,16 +278,33 @@ def assign_human_counterfactuals(client: OpenAI, df: pd.DataFrame) -> pd.DataFra
         journal = str(row.get("transcript_paraphrased_staged_json", ""))
         answers = str(row.get("answers", ""))
 
-        prompt = CF_ASSIGNMENT_USER_PROMPT.format(journal=journal, answers=answers)
-        result = gpt_call(client, CF_ASSIGNMENT_SYSTEM_PROMPT, prompt, TEMPERATURE_STAGE)
+        # The notebook processes each CF individually then combines
+        answers_str = answers.strip()
+        if answers_str.startswith("[") and answers_str.endswith("]"):
+            try:
+                cf_list = json.loads(answers_str)
+            except json.JSONDecodeError:
+                cf_list = [answers_str]
+        else:
+            cf_list = [answers_str]
 
-        try:
-            parsed = json.loads(result)
-            result_min = json.dumps(parsed, separators=(",", ":"))
-            actionables = compute_actionables(parsed)
-        except json.JSONDecodeError:
-            result_min = result
-            actionables = [0, 0, 0, 0, 0]
+        combined = {"0": [], "1": [], "2": [], "3": [], "4": []}
+        for cf in cf_list:
+            if not cf or str(cf).lower() == "nan":
+                continue
+            prompt = HUMAN_ALT_USER_PROMPT.format(answers=cf)
+            result = gpt_call(client, HUMAN_ALT_SYSTEM_PROMPT, prompt, TEMPERATURE_STAGE)
+            try:
+                parsed = json.loads(result)
+            except json.JSONDecodeError:
+                parsed = {"0": "", "1": "", "2": "", "3": "", "4": ""}
+            for k in combined.keys():
+                if parsed.get(k):
+                    combined[k].append(parsed[k])
+
+        staged_json = {k: " ".join(map(str, v)) if v else "" for k, v in combined.items()}
+        result_min = json.dumps(staged_json, ensure_ascii=False)
+        actionables = compute_actionables(staged_json)
 
         results_json.append(result_min)
         results_actionables.append(actionables)
@@ -260,7 +366,7 @@ def main():
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
     df.to_csv(args.output, index=False)
-    print(f"\nSaved preprocessed data → {args.output}")
+    print(f"\nSaved preprocessed data -> {args.output}")
 
 
 if __name__ == "__main__":
